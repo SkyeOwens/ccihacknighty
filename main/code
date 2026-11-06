@@ -1,0 +1,20 @@
+import javax.swing.*;
+
+public class Main {
+    
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame("My Game");
+            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            frame.setResizable(false);
+
+            GamePanel panel = new GamePanel();   // your JPanel subclass
+            frame.setContentPane(panel);
+            frame.pack();                        // sizes the window to the panel's preferred size
+            frame.setLocationRelativeTo(null);   // centers it on screen
+            frame.setVisible(true);
+
+            panel.requestFocusInWindow();        // so keyboard input works right away
+        });
+    }
+}
