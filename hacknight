@@ -1,0 +1,278 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Random;
+import java.util.Set;
+
+/**
+ * ShooterArena: a lean top-down shooter with a tile map, mouse-aimed guns and chasing enemies.
+ * Requires Java 17+.   Compile: javac ShooterArena.java    Run: java ShooterArena
+ * Controls: WASD move | mouse aim | hold left click to fire | 1/2/3 switch gun | R restart
+ */
+public class ShooterArena extends JPanel implements ActionListener, KeyListener, MouseListener, MouseMotionListener {
+
+    // ---------- Map ('#' wall, '.' floor) ----------
+    static final String[] MAP = {
+        "########################",
+        "#......................#",
+        "#..###..........###....#",
+        "#..#..............#....#",
+        "#......................#",
+        "#.........####.........#",
+        "#.........#..#.........#",
+        "#.........#..#.........#",
+        "#......................#",
+        "#....#............#....#",
+        "#....#............#....#",
+        "#....###........###....#",
+        "#......................#",
+        "#......................#",
+        "########################"
+    };
+    static final int TILE = 40, COLS = MAP[0].length(), ROWS = MAP.length, W = COLS * TILE, H = ROWS * TILE;
+
+    // ---------- Guns ----------
+    record Gun(String name, double damage, double cooldown, int pellets, double spread, double bulletSpeed, Color color) {}
+    static final Gun[] GUNS = {
+        new Gun("Pistol",  4,   0.35, 1, 0.03, 620, new Color(0x9ad1ff)),
+        new Gun("Shotgun", 2.5, 0.85, 6, 0.40, 560, new Color(0xff8a5b)),
+        new Gun("SMG",     1.5, 0.09, 1, 0.14, 700, new Color(0xffd166)),
+    };
+
+    static class Enemy  { double x, y, hp = 6, speed; }
+    static class Bullet { double x, y, vx, vy, dmg, life; Color color; }
+
+    // ---------- State ----------
+    final Random rnd = new Random();
+    final Set<Integer> keys = new HashSet<>();
+    final List<Enemy> enemies = new ArrayList<>();
+    final List<Bullet> bullets = new ArrayList<>();
+    final javax.swing.Timer loop = new javax.swing.Timer(16, this);
+
+    double px, py, hp, hitCd, fireCd, spawnCd, elapsed;
+    int mouseX, mouseY, gunIndex, kills;
+    boolean firing, dead;
+    long last = System.nanoTime();
+
+    public ShooterArena() {
+        setPreferredSize(new Dimension(W, H));
+        setFocusable(true);
+        addKeyListener(this); addMouseListener(this); addMouseMotionListener(this);
+        reset();
+        loop.start();
+    }
+
+    void reset() {
+        px = W / 2.0; py = H / 2.0 + TILE; hp = 10; hitCd = 0; fireCd = 0; spawnCd = 1;
+        elapsed = 0; kills = 0; gunIndex = 0; dead = false;
+        enemies.clear(); bullets.clear();
+    }
+
+    // ---------- Map helpers ----------
+    boolean wall(double x, double y) {
+        int c = (int) Math.floor(x / TILE), r = (int) Math.floor(y / TILE);
+        return c < 0 || r < 0 || c >= COLS || r >= ROWS || MAP[r].charAt(c) == '#';
+    }
+    boolean blocked(double x, double y, double rad) {
+        return wall(x - rad, y - rad) || wall(x + rad, y - rad) || wall(x - rad, y + rad) || wall(x + rad, y + rad);
+    }
+    /** Moves with axis-separated collision so entities slide along walls. */
+    double[] move(double x, double y, double dx, double dy, double rad) {
+        if (!blocked(x + dx, y, rad)) x += dx;
+        if (!blocked(x, y + dy, rad)) y += dy;
+        return new double[]{x, y};
+    }
+
+    // ---------- Update ----------
+    @Override public void actionPerformed(ActionEvent e) {
+        long now = System.nanoTime();
+        double dt = Math.min(0.05, (now - last) / 1e9);
+        last = now;
+        if (!dead) update(dt);
+        repaint();
+    }
+
+    void update(double dt) {
+        elapsed += dt;
+
+        // player movement
+        int dx = (keys.contains(KeyEvent.VK_D) ? 1 : 0) - (keys.contains(KeyEvent.VK_A) ? 1 : 0);
+        int dy = (keys.contains(KeyEvent.VK_S) ? 1 : 0) - (keys.contains(KeyEvent.VK_W) ? 1 : 0);
+        double len = Math.hypot(dx, dy); if (len == 0) len = 1;
+        double[] p = move(px, py, dx / len * 190 * dt, dy / len * 190 * dt, 12);
+        px = p[0]; py = p[1];
+
+        // shooting
+        fireCd -= dt;
+        Gun gun = GUNS[gunIndex];
+        if (firing && fireCd <= 0) {
+            fireCd = gun.cooldown();
+            double aim = Math.atan2(mouseY - py, mouseX - px);
+            for (int i = 0; i < gun.pellets(); i++) {
+                double a = aim + (rnd.nextDouble() - 0.5) * gun.spread();
+                Bullet b = new Bullet();
+                b.x = px + Math.cos(aim) * 18; b.y = py + Math.sin(aim) * 18;
+                b.vx = Math.cos(a) * gun.bulletSpeed(); b.vy = Math.sin(a) * gun.bulletSpeed();
+                b.dmg = gun.damage(); b.life = 1.2; b.color = gun.color();
+                bullets.add(b);
+            }
+        }
+
+        // spawn enemies on random open tiles away from the player
+        spawnCd -= dt;
+        if (spawnCd <= 0) {
+            spawnCd = Math.max(0.35, 1.4 - elapsed * 0.012);
+            for (int tries = 0; tries < 30; tries++) {
+                double sx = (rnd.nextInt(COLS - 2) + 1.5) * TILE, sy = (rnd.nextInt(ROWS - 2) + 1.5) * TILE;
+                if (!blocked(sx, sy, 12) && Math.hypot(sx - px, sy - py) > 260) {
+                    Enemy en = new Enemy();
+                    en.x = sx; en.y = sy; en.hp = 6 + elapsed * 0.08; en.speed = 60 + rnd.nextDouble() * 35 + elapsed * 0.4;
+                    enemies.add(en);
+                    break;
+                }
+            }
+        }
+
+        // enemies chase and bite
+        hitCd -= dt;
+        for (Enemy en : enemies) {
+            double ang = Math.atan2(py - en.y, px - en.x);
+            double[] q = move(en.x, en.y, Math.cos(ang) * en.speed * dt, Math.sin(ang) * en.speed * dt, 12);
+            en.x = q[0]; en.y = q[1];
+            if (Math.hypot(px - en.x, py - en.y) < 24 && hitCd <= 0) {
+                hitCd = 0.6; hp -= 1;
+                if (hp <= 0) dead = true;
+            }
+        }
+
+        // bullets: stop on walls, damage enemies
+        for (Bullet b : bullets) {
+            b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+            if (wall(b.x, b.y)) { b.life = 0; continue; }
+            for (Enemy en : enemies) {
+                if (en.hp > 0 && Math.hypot(b.x - en.x, b.y - en.y) < 15) {
+                    en.hp -= b.dmg; b.life = 0;
+                    if (en.hp <= 0) kills++;
+                    break;
+                }
+            }
+        }
+        bullets.removeIf(b -> b.life <= 0);
+        enemies.removeIf(en -> en.hp <= 0);
+    }
+
+    // ---------- Rendering ----------
+    @Override protected void paintComponent(Graphics g0) {
+        super.paintComponent(g0);
+        Graphics2D g = (Graphics2D) g0;
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        // map
+        for (int r = 0; r < ROWS; r++) {
+            for (int c = 0; c < COLS; c++) {
+                boolean w = MAP[r].charAt(c) == '#';
+                g.setColor(w ? new Color(0x3d3a52) : ((r + c) % 2 == 0 ? new Color(0x1f1d2b) : new Color(0x232131)));
+                g.fillRect(c * TILE, r * TILE, TILE, TILE);
+                if (w) { g.setColor(new Color(0x55507a)); g.drawRect(c * TILE, r * TILE, TILE - 1, TILE - 1); }
+            }
+        }
+
+        // enemies
+        for (Enemy en : enemies) {
+            g.setColor(new Color(0xb43c5a)); g.fillOval((int) en.x - 14, (int) en.y - 14, 28, 28);
+            g.setColor(Color.WHITE);
+            g.fillOval((int) en.x - 7, (int) en.y - 5, 5, 5); g.fillOval((int) en.x + 2, (int) en.y - 5, 5, 5);
+        }
+
+        // bullets
+        for (Bullet b : bullets) { g.setColor(b.color); g.fillOval((int) b.x - 3, (int) b.y - 3, 6, 6); }
+
+        // player + gun barrel
+        double aim = Math.atan2(mouseY - py, mouseX - px);
+        g.setStroke(new BasicStroke(6, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.setColor(GUNS[gunIndex].color());
+        g.drawLine((int) px, (int) py, (int) (px + Math.cos(aim) * 26), (int) (py + Math.sin(aim) * 26));
+        g.setColor(hitCd > 0.4 ? Color.WHITE : new Color(0x8fb8a8));
+        g.fillOval((int) px - 14, (int) py - 14, 28, 28);
+
+        // crosshair
+        g.setStroke(new BasicStroke(2)); g.setColor(Color.WHITE);
+        g.drawOval(mouseX - 8, mouseY - 8, 16, 16);
+        g.drawLine(mouseX - 12, mouseY, mouseX + 12, mouseY); g.drawLine(mouseX, mouseY - 12, mouseX, mouseY + 12);
+
+        drawHud(g);
+        if (dead) {
+            g.setColor(new Color(10, 9, 16, 220)); g.fillRect(0, 0, W, H);
+            g.setFont(new Font("SansSerif", Font.BOLD, 40)); g.setColor(Color.WHITE);
+            centered(g, "YOU DIED", W / 2, H / 2 - 10);
+            g.setFont(new Font("SansSerif", Font.BOLD, 16));
+            centered(g, kills + " kills  ·  press R to restart", W / 2, H / 2 + 26);
+        }
+    }
+
+    void drawHud(Graphics2D g) {
+        // health bar
+        g.setColor(new Color(0, 0, 0, 150)); g.fillRoundRect(14, 12, 220, 22, 8, 8);
+        g.setColor(new Color(0xe5484d)); g.fillRoundRect(14, 12, (int) (220 * Math.max(0, hp) / 10), 22, 8, 8);
+        g.setColor(new Color(0x3d3a52)); g.setStroke(new BasicStroke(2)); g.drawRoundRect(14, 12, 220, 22, 8, 8);
+        g.setFont(new Font("SansSerif", Font.BOLD, 12)); g.setColor(Color.WHITE);
+        centered(g, (int) Math.ceil(Math.max(0, hp)) + " / 10", 124, 28);
+
+        // kills + time
+        g.setFont(new Font("SansSerif", Font.BOLD, 18));
+        g.drawString("Kills: " + kills, W - 130, 30);
+        g.drawString(String.format("%d:%02d", (int) elapsed / 60, (int) elapsed % 60), W / 2 - 18, 30);
+
+        // gun bar (1/2/3 to switch)
+        for (int i = 0; i < GUNS.length; i++) {
+            int x = 14 + i * 74, y = H - 62;
+            boolean sel = i == gunIndex;
+            g.setColor(new Color(0, 0, 0, sel ? 190 : 120)); g.fillRoundRect(x, y, 68, 48, 10, 10);
+            g.setColor(sel ? GUNS[i].color() : new Color(0x3d3a52));
+            g.setStroke(new BasicStroke(sel ? 3 : 2)); g.drawRoundRect(x, y, 68, 48, 10, 10);
+            g.setFont(new Font("SansSerif", Font.BOLD, 11)); g.setColor(Color.WHITE);
+            centered(g, (i + 1) + "  " + GUNS[i].name(), x + 34, y + 29);
+        }
+    }
+
+    void centered(Graphics2D g, String s, int cx, int baseline) {
+        g.drawString(s, cx - g.getFontMetrics().stringWidth(s) / 2, baseline);
+    }
+
+    // ---------- Input ----------
+    @Override public void keyPressed(KeyEvent e) {
+        keys.add(e.getKeyCode());
+        int k = e.getKeyCode();
+        if (k >= KeyEvent.VK_1 && k < KeyEvent.VK_1 + GUNS.length) gunIndex = k - KeyEvent.VK_1;
+        if (k == KeyEvent.VK_R && dead) reset();
+    }
+    @Override public void keyReleased(KeyEvent e) { keys.remove(e.getKeyCode()); }
+    @Override public void keyTyped(KeyEvent e) {}
+    @Override public void mousePressed(MouseEvent e)  { if (SwingUtilities.isLeftMouseButton(e)) firing = true; mouseX = e.getX(); mouseY = e.getY(); }
+    @Override public void mouseReleased(MouseEvent e) { if (SwingUtilities.isLeftMouseButton(e)) firing = false; }
+    @Override public void mouseMoved(MouseEvent e)    { mouseX = e.getX(); mouseY = e.getY(); }
+    @Override public void mouseDragged(MouseEvent e)  { mouseX = e.getX(); mouseY = e.getY(); }
+    @Override public void mouseClicked(MouseEvent e) {}
+    @Override public void mouseEntered(MouseEvent e) {}
+    @Override public void mouseExited(MouseEvent e) {}
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            JFrame f = new JFrame("ShooterArena");
+            f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            f.setResizable(false);
+            ShooterArena game = new ShooterArena();
+            f.setContentPane(game);
+            f.pack();
+            f.setLocationRelativeTo(null);
+            f.setVisible(true);
+            game.requestFocusInWindow();
+            game.setCursor(Toolkit.getDefaultToolkit().createCustomCursor(
+                new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), new Point(0, 0), "blank"));
+        });
+    }
+}
