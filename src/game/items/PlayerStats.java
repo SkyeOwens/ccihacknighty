@@ -1,4 +1,4 @@
-package src.items;
+package game.items;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -31,16 +31,11 @@ public class PlayerStats {
     public int get(Stat stat) {
         int v = values.get(stat);
         switch (stat) {
-            case DODGE:
-                return Math.min(v, MAX_DODGE);
-            case CRIT_CHANCE:
-                return clamp(v, 0, MAX_CRIT);
-            case LIFE_STEAL:
-                return clamp(v, 0, MAX_LIFE_STEAL);
-            case MAX_HP:
-                return Math.max(v, MIN_MAX_HP);
-            default:
-                return v;
+            case DODGE:      return Math.min(v, MAX_DODGE);
+            case CRIT_CHANCE: return clamp(v, 0, MAX_CRIT);
+            case LIFE_STEAL: return clamp(v, 0, MAX_LIFE_STEAL);
+            case MAX_HP:     return Math.max(v, MIN_MAX_HP);
+            default:         return v;
         }
     }
 

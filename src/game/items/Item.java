@@ -1,4 +1,4 @@
-package src.items;
+package game.items;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -7,10 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * An immutable item definition. There is one Item object per item type (see
- * Items);
- * the player's inventory just holds references to them, so owning 3 Helmets
- * means
+ * An immutable item definition. There is one Item object per item type (see Items);
+ * the player's inventory just holds references to them, so owning 3 Helmets means
  * the list contains Items.HELMET three times.
  */
 public class Item {
@@ -22,8 +20,8 @@ public class Item {
     private final int price;
     private final int maxCount;
     private final Map<Stat, Integer> modifiers;
-    private final ItemEffect effect; // null if the item only changes stats
-    private final String effectText; // UI text for the special effect, or null
+    private final ItemEffect effect;     // null if the item only changes stats
+    private final String effectText;     // UI text for the special effect, or null
     private final String iconPath;
 
     private Item(Builder b) {
@@ -38,45 +36,16 @@ public class Item {
         this.iconPath = b.iconPath != null ? b.iconPath : "items/" + b.id + ".png";
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public int getTier() {
-        return tier;
-    }
-
-    public int getPrice() {
-        return price;
-    }
-
-    public int getMaxCount() {
-        return maxCount;
-    }
-
-    public boolean isLimited() {
-        return maxCount != UNLIMITED;
-    }
-
-    public Map<Stat, Integer> getModifiers() {
-        return modifiers;
-    }
-
-    public ItemEffect getEffect() {
-        return effect;
-    }
-
-    public boolean hasEffect() {
-        return effect != null;
-    }
-
-    public String getIconPath() {
-        return iconPath;
-    }
+    public String getId()                    { return id; }
+    public String getName()                  { return name; }
+    public int getTier()                     { return tier; }
+    public int getPrice()                    { return price; }
+    public int getMaxCount()                 { return maxCount; }
+    public boolean isLimited()               { return maxCount != UNLIMITED; }
+    public Map<Stat, Integer> getModifiers() { return modifiers; }
+    public ItemEffect getEffect()            { return effect; }
+    public boolean hasEffect()               { return effect != null; }
+    public String getIconPath()              { return iconPath; }
 
     /**
      * Lines of text for a tooltip or shop card, e.g.
@@ -115,8 +84,7 @@ public class Item {
         private final int tier;
         private final int price;
         private int maxCount = UNLIMITED;
-        // LinkedHashMap keeps stats in the order you list them, so tooltips match your
-        // design.
+        // LinkedHashMap keeps stats in the order you list them, so tooltips match your design.
         private final LinkedHashMap<Stat, Integer> modifiers = new LinkedHashMap<>();
         private ItemEffect effect;
         private String effectText;

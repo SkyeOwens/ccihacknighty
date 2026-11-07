@@ -1,10 +1,9 @@
-package src.items;
+package game.items;
 
 /**
  * Every stat an item can change.
  *
- * Percentage stats (Damage, Attack Speed, Crit, Dodge, Speed, Life Steal) are
- * stored
+ * Percentage stats (Damage, Attack Speed, Crit, Dodge, Speed, Life Steal) are stored
  * as whole numbers: a value of 12 means 12%.
  */
 public enum Stat {
